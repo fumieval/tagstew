@@ -14,10 +14,10 @@ import System.IO (stdout)
 fromTag :: Tag B.ByteString -> BB.Builder
 fromTag = go where
   f = BB.byteString
-  go (TagOpen t xs) = "<" <> f t
+  go (TagOpen t xs) = "\ESC[34m<" <> f t
     <> foldMap (\(k, v) -> " " <> f k <> "=" <> f v) xs
-    <> ">"
-  go (TagClose t) = "</" <> f t <> ">"
+    <> ">\ESC[0m"
+  go (TagClose t) = "\ESC[34m</" <> f t <> ">\ESC[0m"
   go (TagText t) = f t
   go (TagComment t) = "<!--" <> f t <> "-->"
 {-# INLINE fromTag #-}
@@ -25,4 +25,4 @@ fromTag = go where
 main :: IO ()
 main = getArgs >>= \paths -> forM_ paths $ \path -> do
   bs <- B.readFile path
-  BB.hPutBuilder stdout $ foldMap fromTag $ Stew.parseTags bs
+  BB.hPutBuilder stdout $ foldMap ((<>"\n") . fromTag) $ Stew.parseTags bs

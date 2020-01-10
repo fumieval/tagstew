@@ -8,6 +8,7 @@ import qualified Data.ByteString.Unsafe as B
 import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString as B
 import qualified Text.HTML.TagSoup as S
+import Text.HTML.TagStew.Entity (lookupEntity)
 import Control.Concurrent
 import Control.Monad
 import Data.Bits
@@ -16,6 +17,7 @@ import Data.Char
 import Data.Word (Word8)
 
 data Stack = Text !Int
+  | Entity !Int
   | TagOpen !Int
   | TagClose !Int
   | Attrs !Range !Attrs
@@ -43,18 +45,18 @@ unpack (MkRange x) = (x `shiftR` 32, x .&. 0xffffffff)
 parseTags :: B.ByteString -> [S.Tag B.ByteString]
 parseTags bs = unsafePerformIO $ do
     var <- newEmptyMVar
-    let slice (Range i j) = B.unsafeTake (j - i) $ B.unsafeDrop i bs
     _ <- forkIO $ parse bs var
     let go _ = unsafePerformIO $ do
           resp <- takeMVar var
           return $! case resp of
-            S.TagText (Range i j) | i == j -> []
-            s -> fmap slice s : go ()
+            S.TagText bs | B.null bs -> []
+            s -> s : go ()
     return $ go ()
 
-parse :: B.ByteString -> MVar (S.Tag Range) -> IO ()
+parse :: B.ByteString -> MVar (S.Tag B.ByteString) -> IO ()
 parse bs out = go 0 (Text 0) where
-  push x = putMVar out $! x
+  slice (Range i j) = B.unsafeTake (j - i) $ B.unsafeDrop i bs
+  push x = putMVar out $! fmap slice x
   isScript (Range i j) = BC.map toLower (B.unsafeTake (j - i) (B.unsafeDrop i bs)) == "script"
   {-# INLINE isScript #-}
   go :: Int -> Stack -> IO ()
@@ -65,10 +67,21 @@ parse bs out = go 0 (Text 0) where
         push $ S.TagComment $ Range i loc
         go (loc + 3) $ Text (loc + 3)
       | otherwise -> char
+    Entity i -> case ch of
+      C_SC -> do
+        case lookupEntity (B.take (loc - i) $ B.drop i bs) of
+          Just x -> putMVar out $ S.TagText x
+          Nothing -> push $ S.TagText (Range i loc)
+        next $ Text loc'
+      _ | byteCount > 1 -> next $ Text i
+      _ -> char
     Text i -> case ch of
       C_LT -> do
         pushText $ Range i loc
         next $ TagOpen loc'
+      C_AMP -> do
+        pushText $ Range i loc
+        next $ Entity loc'
       _ -> char
     TagOpen i -> case ch of
       C_GT -> pushOpen 1 (Range i loc) []
@@ -87,6 +100,7 @@ parse bs out = go 0 (Text 0) where
       C_DQ -> next $ AttrValue QDouble tname (Range 0 0) loc' attrs
       C_EQ -> next $ AttrValue QNone tname (Range i loc) loc' attrs
       C_SL -> pushOpen 2 tname attrs
+      C_GT -> pushOpen 1 tname attrs
       _ | isSpace' ch -> next $ AttrName tname loc' ((Range i loc, Range 0 0) : attrs)
       _ -> char
     AttrValue QSingle tname aname i attrs -> case ch of
@@ -132,7 +146,7 @@ parse bs out = go 0 (Text 0) where
 isSpace' :: Word8 -> Bool
 isSpace' ch = ch == 13 || ch == 10 || ch == 32
 
-pattern C_SP, C_LT, C_EQ, C_GT, C_SL, C_SQ, C_DQ, C_BS :: Word8
+pattern C_SP, C_LT, C_EQ, C_GT, C_SL, C_SQ, C_DQ, C_BS, C_AMP, C_SC :: Word8
 pattern C_SP = 32
 pattern C_LT = 60
 pattern C_EQ = 61
@@ -141,6 +155,9 @@ pattern C_SL = 47
 pattern C_SQ = 39
 pattern C_DQ = 34
 pattern C_BS = 92
+pattern C_AMP = 38
+pattern C_SC = 59
+
 
 c2w :: Char -> Word8
 c2w = toEnum . fromEnum
