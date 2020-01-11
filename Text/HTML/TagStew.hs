@@ -49,7 +49,7 @@ parseTags bs = unsafePerformIO $ do
     let go _ = unsafePerformIO $ do
           resp <- takeMVar var
           return $! case resp of
-            S.TagText bs | B.null bs -> []
+            S.TagText x | B.null x -> []
             s -> s : go ()
     return $ go ()
 
@@ -73,8 +73,8 @@ parse bs out = go 0 (Text 0) where
           Just x -> putMVar out $ S.TagText x
           Nothing -> push $ S.TagText (Range i loc)
         next $ Text loc'
-      C_SP -> next $ Text i
-      _ | byteCount > 1 -> next $ Text i
+      C_SP -> next $ Text (i - 1)
+      _ | byteCount > 1 -> next $ Text (i - 1)
       _ -> char
     Text i -> case ch of
       C_LT -> do
