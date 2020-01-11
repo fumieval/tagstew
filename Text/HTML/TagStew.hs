@@ -73,6 +73,7 @@ parse bs out = go 0 (Text 0) where
           Just x -> putMVar out $ S.TagText x
           Nothing -> push $ S.TagText (Range i loc)
         next $ Text loc'
+      C_SP -> next $ Text i
       _ | byteCount > 1 -> next $ Text i
       _ -> char
     Text i -> case ch of
