@@ -73,9 +73,9 @@ parse bs out = go 0 (Text 0) where
           Just x -> putMVar out $ S.TagText x
           Nothing -> push $ S.TagText (Range i loc)
         next $ Text loc'
-      C_SP -> next $ Text (i - 1)
-      _ | byteCount > 1 -> next $ Text (i - 1)
-      _ -> char
+      C_NS -> char
+      _ | isAlphaNum (toEnum (fromEnum ch)) -> char
+      _ -> go loc $ Text (i - 1)
     Text i -> case ch of
       C_LT -> do
         pushText $ Range i loc
@@ -147,8 +147,7 @@ parse bs out = go 0 (Text 0) where
 isSpace' :: Word8 -> Bool
 isSpace' ch = ch == 13 || ch == 10 || ch == 32
 
-pattern C_SP, C_LT, C_EQ, C_GT, C_SL, C_SQ, C_DQ, C_BS, C_AMP, C_SC :: Word8
-pattern C_SP = 32
+pattern C_LT, C_EQ, C_GT, C_SL, C_SQ, C_DQ, C_BS, C_AMP, C_SC, C_NS :: Word8
 pattern C_LT = 60
 pattern C_EQ = 61
 pattern C_GT = 62
@@ -158,6 +157,7 @@ pattern C_DQ = 34
 pattern C_BS = 92
 pattern C_AMP = 38
 pattern C_SC = 59
+pattern C_NS = 35
 
 
 c2w :: Char -> Word8
