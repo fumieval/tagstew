@@ -25,4 +25,4 @@ fromTag = go where
 main :: IO ()
 main = getArgs >>= \paths -> forM_ paths $ \path -> do
   bs <- B.readFile path
-  BB.hPutBuilder stdout $ foldMap ((<>"\n") . fromTag) $ Stew.parseTags bs
+  BB.hPutBuilder stdout $ foldMap ((<>"\n") . fromTag) $ Soup.parseTags bs

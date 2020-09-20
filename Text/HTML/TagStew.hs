@@ -9,10 +9,7 @@ import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString as B
 import qualified Text.HTML.TagSoup as S
 import Text.HTML.TagStew.Entity (lookupEntity)
-import Control.Concurrent
-import Control.Monad
 import Data.Bits
-import System.IO.Unsafe
 import Data.Char
 import Data.Word (Word8)
 
@@ -43,46 +40,29 @@ unpack (MkRange x) = (x `shiftR` 32, x .&. 0xffffffff)
 {-# INLINE unpack #-}
 
 parseTags :: B.ByteString -> [S.Tag B.ByteString]
-parseTags bs = unsafePerformIO $ do
-    var <- newEmptyMVar
-    _ <- forkIO $ parse bs var
-    let go _ = unsafePerformIO $ do
-          resp <- takeMVar var
-          return $! case resp of
-            S.TagText x | B.null x -> []
-            s -> s : go ()
-    return $ go ()
-
-parse :: B.ByteString -> MVar (S.Tag B.ByteString) -> IO ()
-parse bs out = go 0 (Text 0) where
+parseTags bs = go 0 (Text 0) where
   slice (Range i j) = B.unsafeTake (j - i) $ B.unsafeDrop i bs
-  push x = putMVar out $! fmap slice x
   isScript (Range i j) = BC.map toLower (B.unsafeTake (j - i) (B.unsafeDrop i bs)) == "script"
   {-# INLINE isScript #-}
-  go :: Int -> Stack -> IO ()
-  go loc _ | loc >= B.length bs = push $ S.TagText $ Range 0 0
+  go :: Int -> Stack -> [S.Tag B.ByteString]
+  go loc _ | loc >= B.length bs = []
   go !loc !st = case st of
     Comment i
-      | B.take 3 (B.drop loc bs) == "-->" -> do
-        push $ S.TagComment $ Range i loc
-        go (loc + 3) $ Text (loc + 3)
+      | B.take 3 (B.drop loc bs) == "-->" ->
+        S.TagComment (slice $ Range i loc)
+          : go (loc + 3) (Text (loc + 3))
       | otherwise -> char
     Entity i -> case ch of
       C_SC -> do
         case lookupEntity (B.take (loc - i) $ B.drop i bs) of
-          Just x -> putMVar out $ S.TagText x
-          Nothing -> push $ S.TagText (Range i loc)
-        next $ Text loc'
+          Just x -> S.TagText x : next (Text loc')
+          Nothing -> S.TagText (slice $ Range i loc) : next (Text loc')
       C_NS -> char
       _ | isAlphaNum (toEnum (fromEnum ch)) -> char
       _ -> go loc $ Text (i - 1)
     Text i -> case ch of
-      C_LT -> do
-        pushText $ Range i loc
-        next $ TagOpen loc'
-      C_AMP -> do
-        pushText $ Range i loc
-        next $ Entity loc'
+      C_LT -> pushText (Range i loc) $ next (TagOpen loc')
+      C_AMP -> pushText (Range i loc) $ next (Entity loc')
       _ -> char
     TagOpen i -> case ch of
       C_GT -> pushOpen 1 (Range i loc) []
@@ -120,21 +100,21 @@ parse bs out = go 0 (Text 0) where
       _ | isSpace' ch -> next $ AttrName tname loc' $ (aname, Range i loc) : attrs
       _ -> char
     TagClose i -> case ch of
-      C_GT -> do
-        push $ S.TagClose $! Range i loc
-        next $ Text $ loc + 1
+      C_GT -> (S.TagClose $! slice $ Range i loc) : next (Text $ loc + 1)
       _ -> char
     Script i
       | map toLower (BC.unpack (B.take 9 (B.drop loc bs))) == "</script>" -> do
-        pushText $ Range i loc
-        push $ S.TagClose $ Range (loc + 2) (loc + 8)
-        next $ Text $ loc + 9
+        pushText (Range i loc)
+          $ S.TagClose (slice $ Range (loc + 2) (loc + 8))
+          : next (Text $ loc + 9)
       | otherwise -> char
     where
-      pushText str@(Range i j) = unless (i == j) $ push $ S.TagText str
-      pushOpen ofs tname attrs = do
-        push $ S.TagOpen tname attrs
-        if isScript tname
+      pushText str@(Range i j) cont
+        | i == j = cont
+        | otherwise = S.TagText (slice str) : cont
+      pushOpen ofs tname attrs =
+        fmap slice (S.TagOpen tname attrs)
+        : if isScript tname
           then go (loc + ofs) $ Script loc'
           else next $ Text $ loc + ofs
       {-# INLINE pushOpen #-}

@@ -3,33 +3,29 @@ cabal-version:       2.4
 -- For further documentation, see http://haskell.org/cabal/users-guide/
 
 name:                tagstew
-version:             0.1.0.0
+version:             0
 synopsis:            Black magic tagsoup
--- description:
+description:         Fast alternative HTML decoder for tagsoup
 -- bug-reports:
--- license:
+license:             BSD-3-Clause
 license-file:        LICENSE
 author:              Fumiaki Kinoshita
 maintainer:          fumiexcel@gmail.com
--- copyright:
--- category:
+copyright:           Copyright (c) 2020 Fumiaki Kinoshita
+category:            Text
 extra-source-files:  CHANGELOG.md
 
 library
   exposed-modules:     Text.HTML.TagStew, Text.HTML.TagStew.Entity
-  -- other-modules:
-  -- other-extensions:
   ghc-options: -Wall -O2
   build-depends:       base == 4.*, bytestring, compact, unordered-containers
     , tagsoup, text
-  -- hs-source-dirs:
   default-language:    Haskell2010
 
 executable tagstew
   main-is:             Main.hs
   -- other-modules:
   -- other-extensions:
-  ghc-options: -threaded
   build-depends:       base == 4.*, bytestring
     , tagstew
     , tagsoup
